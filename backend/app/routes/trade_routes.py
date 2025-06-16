@@ -1,160 +1,125 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Path
 from typing import List
 
-from app.models.trade_models import Trade, TradeCreate
-from app.models.user_models import User
+from fastapi import APIRouter, Depends, HTTPException, status, Path
+from typing import List
+from sqlalchemy.orm import Session
+
+from app.models.trade_models import Trade, TradeCreate # Pydantic models
+from app.models.user_models import User as PydanticUser # Pydantic User for current_user
 from app.services.auth_service import get_current_active_user
-# We need access to the portfolio "DB" to check ownership
-from app.routes.portfolio_routes import _fake_portfolios_db
+from app.database import get_db
+from app.crud import crud_trade, crud_portfolio # Import portfolio CRUD for ownership check
+from app.models.portfolio_models import DBPortfolio # SQLAlchemy model for type hint
 
 router = APIRouter(
-    # Prefix will be defined in main.py when including the router
+    # Prefix is defined in main.py: /portfolios/{portfolio_id}/trades
     tags=["trades"],
     dependencies=[Depends(get_current_active_user)]
 )
 
-# In-memory storage for trades
-# List of Trade objects. portfolio_id is part of Trade model.
-_fake_trades_db: List[Trade] = []
-_next_trade_id: int = 1
+# In-memory DB and ID counter are removed
+# _fake_trades_db: List[Trade] = []
+# _next_trade_id: int = 1
 
-# Helper function to check portfolio ownership
-async def get_portfolio_for_user(
+# Helper function to check portfolio ownership using DB
+async def get_portfolio_for_user_from_db(
     portfolio_id: int,
-    current_user: User = Depends(get_current_active_user)
-):
-    portfolio = next((
-        p for p in _fake_portfolios_db
-        if p.portfolio_id == portfolio_id and p.user_id == current_user.user_id
-    ), None)
-    if not portfolio:
+    current_user: PydanticUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> DBPortfolio: # Return SQLAlchemy DBPortfolio
+    db_portfolio = crud_portfolio.get_portfolio_by_id(db, portfolio_id=portfolio_id)
+    if not db_portfolio or db_portfolio.user_id != current_user.user_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Portfolio not found or not owned by user"
         )
-    return portfolio
+    return db_portfolio
 
 @router.post("/", response_model=Trade, status_code=status.HTTP_201_CREATED)
 async def create_trade(
-    trade_in: TradeCreate, # Body parameter first
-    portfolio_id: int = Path(..., title="The ID of the portfolio to add trade to"),
-    current_user: User = Depends(get_current_active_user)
-    # portfolio = Depends(get_portfolio_for_user) # Alternative way to inject and check ownership
+    trade_in: TradeCreate,
+    portfolio_id: int = Path(..., description="The ID of the portfolio to add this trade to"),
+    # current_user is available from router dependencies, but get_portfolio_for_user_from_db also resolves it
+    db_portfolio: DBPortfolio = Depends(get_portfolio_for_user_from_db), # Handles ownership check
+    db: Session = Depends(get_db)
 ):
-    # Ensure the portfolio exists and belongs to the user
-    # current_user is resolved by Depends, portfolio_id from path
-    portfolio = await get_portfolio_for_user(portfolio_id, current_user)
-    # If we reach here, portfolio is valid and owned by current_user
-
-    global _next_trade_id
-    from datetime import datetime, timezone # Import here or globally
-
-    new_trade = Trade(
-        trade_id=_next_trade_id,
-        portfolio_id=portfolio.portfolio_id, # Use ID from path, validated by get_portfolio_for_user
-        ticker_symbol=trade_in.ticker_symbol,
-        trade_type=trade_in.trade_type,
-        quantity=trade_in.quantity,
-        price=trade_in.price,
-        timestamp=datetime.now(timezone.utc)
+    # db_portfolio (from Depends) confirms ownership and existence
+    db_trade = crud_trade.create_portfolio_trade(
+        db=db, trade=trade_in, portfolio_id=db_portfolio.portfolio_id
     )
-    _fake_trades_db.append(new_trade)
-    _next_trade_id += 1
-    return new_trade
+    return Trade.model_validate(db_trade)
 
 @router.get("/", response_model=List[Trade])
 async def list_trades_for_portfolio(
-    portfolio_id: int = Path(..., title="The ID of the portfolio"),
-    current_user: User = Depends(get_current_active_user)
+    portfolio_id: int = Path(..., description="The ID of the portfolio"),
+    db_portfolio: DBPortfolio = Depends(get_portfolio_for_user_from_db), # Handles ownership check
+    db: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 100
 ):
-    # Ensure the portfolio exists and belongs to the user
-    await get_portfolio_for_user(portfolio_id, current_user)
-
-    trades_in_portfolio = [
-        t for t in _fake_trades_db if t.portfolio_id == portfolio_id
-    ]
-    return trades_in_portfolio
+    db_trades = crud_trade.get_trades_by_portfolio(
+        db=db, portfolio_id=db_portfolio.portfolio_id, skip=skip, limit=limit
+    )
+    return [Trade.model_validate(t) for t in db_trades]
 
 @router.get("/{trade_id}", response_model=Trade)
 async def get_trade(
-    portfolio_id: int = Path(..., title="The ID of the portfolio"),
-    trade_id: int = Path(..., title="The ID of the trade"),
-    current_user: User = Depends(get_current_active_user)
+    trade_id: int,
+    db_portfolio: DBPortfolio = Depends(get_portfolio_for_user_from_db), # Handles ownership check
+    db: Session = Depends(get_db)
 ):
-    # Ensure portfolio ownership first
-    await get_portfolio_for_user(portfolio_id, current_user)
-
-    trade = next((
-        t for t in _fake_trades_db
-        if t.trade_id == trade_id and t.portfolio_id == portfolio_id
-    ), None)
-
-    if not trade:
+    db_trade = crud_trade.get_trade_by_id(db=db, trade_id=trade_id)
+    if db_trade is None or db_trade.portfolio_id != db_portfolio.portfolio_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Trade not found in this portfolio"
         )
-    return trade
+    return Trade.model_validate(db_trade)
 
 @router.put("/{trade_id}", response_model=Trade)
 async def update_trade(
-    trade_update: TradeCreate, # Body parameter first
-    portfolio_id: int = Path(..., title="The ID of the portfolio"),
-    trade_id: int = Path(..., title="The ID of the trade"),
-    current_user: User = Depends(get_current_active_user)
+    trade_update: TradeCreate,
+    trade_id: int,
+    db_portfolio: DBPortfolio = Depends(get_portfolio_for_user_from_db), # Handles ownership check
+    db: Session = Depends(get_db)
 ):
-    # Ensure portfolio ownership
-    await get_portfolio_for_user(portfolio_id, current_user)
-
-    trade_idx = -1
-    for idx, t in enumerate(_fake_trades_db):
-        if t.trade_id == trade_id and t.portfolio_id == portfolio_id:
-            trade_idx = idx
-            break
-
-    if trade_idx == -1:
+    # First, check if the trade exists and belongs to the specified portfolio (which is owned by user)
+    db_trade_to_update = crud_trade.get_trade_by_id(db=db, trade_id=trade_id)
+    if db_trade_to_update is None or db_trade_to_update.portfolio_id != db_portfolio.portfolio_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Trade not found in this portfolio"
+            detail="Trade not found for update in this portfolio"
         )
 
-    # Update fields
-    updated_trade = _fake_trades_db[trade_idx]
-    updated_trade.ticker_symbol = trade_update.ticker_symbol
-    updated_trade.trade_type = trade_update.trade_type
-    updated_trade.quantity = trade_update.quantity
-    updated_trade.price = trade_update.price
-    # Timestamp could be updated or kept as original creation, depends on requirements
-    # For now, let's assume it's not updated here. It's the original trade time.
+    updated_db_trade = crud_trade.update_trade(
+        db=db, trade_id=trade_id, trade_update=trade_update
+    )
+    return Trade.model_validate(updated_db_trade)
 
-    _fake_trades_db[trade_idx] = updated_trade
-    return updated_trade
 
 @router.delete("/{trade_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_trade(
-    portfolio_id: int = Path(..., title="The ID of the portfolio"),
-    trade_id: int = Path(..., title="The ID of the trade"),
-    current_user: User = Depends(get_current_active_user)
+    trade_id: int,
+    db_portfolio: DBPortfolio = Depends(get_portfolio_for_user_from_db), # Handles ownership check
+    db: Session = Depends(get_db)
 ):
-    # Ensure portfolio ownership
-    await get_portfolio_for_user(portfolio_id, current_user)
-
-    global _fake_trades_db
-    original_len = len(_fake_trades_db)
-    _fake_trades_db = [
-        t for t in _fake_trades_db
-        if not (t.trade_id == trade_id and t.portfolio_id == portfolio_id)
-    ]
-
-    if len(_fake_trades_db) == original_len:
+    # First, check if the trade exists and belongs to the specified portfolio
+    db_trade_to_delete = crud_trade.get_trade_by_id(db=db, trade_id=trade_id)
+    if db_trade_to_delete is None or db_trade_to_delete.portfolio_id != db_portfolio.portfolio_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Trade not found in this portfolio"
+            detail="Trade not found for deletion in this portfolio"
         )
+
+    deleted_trade = crud_trade.delete_trade(db=db, trade_id=trade_id)
+    if not deleted_trade: # Should ideally not happen if previous check passed
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trade deletion failed")
+
     return None
 
-# For testing purposes
-def reset_trade_db_and_ids_for_test():
-    global _next_trade_id, _fake_trades_db
-    _fake_trades_db.clear()
-    _next_trade_id = 1
+# The reset function is no longer needed.
+# def reset_trade_db_and_ids_for_test():
+#     global _next_trade_id, _fake_trades_db
+#     _fake_trades_db.clear()
+#     _next_trade_id = 1

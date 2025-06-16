@@ -1,15 +1,17 @@
 "use client"; // Required for useState and event handlers
 
 import { useState, FormEvent } from "react";
-import { useRouter } from "next/navigation"; // Import useRouter
-import { loginUser, ApiErrorResponse } from "../../services/authService"; // Import loginUser and error type
+import { useRouter } from "next/navigation";
+import { loginUser } from "../../services/authService"; // ApiErrorResponse not explicitly needed here
+import { useAuth } from "../../context/AuthContext"; // Import useAuth
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null); // For displaying login errors
-  const [isLoading, setIsLoading] = useState(false); // For loading state
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
+  const auth = useAuth(); // Get auth context
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -20,18 +22,18 @@ export default function LoginPage() {
       const result = await loginUser({ username, password });
 
       if (result.success) {
-        // Assuming TokenResponse is the type of result.data when success is true
-        localStorage.setItem('authToken', result.data.access_token);
+        // result.data should be TokenResponse { access_token: string; token_type: string; }
+        auth.login(result.data.access_token); // Update context, which handles localStorage
+        // Optional: Pass user data if login API returns it and context's login accepts it
+        // auth.login(result.data.access_token, result.data.user);
         router.push('/dashboard');
       } else {
-        // ApiErrorResponse already has a message property
-        setError(result.message);
+        setError(result.message || "Login failed. Please check your credentials.");
       }
     } catch (err) {
-      // This catch block might be redundant if loginUser always returns a structured response
-      // However, it's good for unexpected errors during the service call itself.
-      setError("An unexpected error occurred. Please try again.");
+      // Handle unexpected errors from loginUser or other issues
       console.error("Login page catch block error:", err);
+      setError("An unexpected error occurred. Please try again.");
     } finally {
       setIsLoading(false);
     }
