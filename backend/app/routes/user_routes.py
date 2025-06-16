@@ -20,6 +20,7 @@ from app.services.auth_service import (
     authenticate_user, # Use the new DB-aware authenticate_user
     ACCESS_TOKEN_EXPIRE_MINUTES,
     # get_password_hash, verify_password are now used within crud_user or authenticate_user
+    get_current_active_user, # Import this
 )
 
 router = APIRouter(
@@ -70,6 +71,15 @@ async def login_for_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.get("/me", response_model=User)
+async def read_users_me(current_user: User = Depends(get_current_active_user)):
+    """
+    Fetch the current logged in user.
+    """
+    # get_current_active_user already returns the Pydantic User model
+    return current_user
 
 # For testing purposes - this reset function is no longer needed here
 # as user data is in the database. Test setup will need to manage test DB state.

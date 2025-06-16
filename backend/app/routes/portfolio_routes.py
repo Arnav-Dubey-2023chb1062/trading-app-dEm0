@@ -3,10 +3,11 @@ from typing import List
 from sqlalchemy.orm import Session
 
 from app.models.portfolio_models import Portfolio, PortfolioCreate # Pydantic models
-from app.models.user_models import User as PydanticUser # Pydantic User model for current_user
-from app.services.auth_service import get_current_active_user # Returns Pydantic User
+from app.models.holding_models import Holding as PydanticHolding # Pydantic Holding model
+from app.models.user_models import User as PydanticUser
+from app.services.auth_service import get_current_active_user
 from app.database import get_db
-from app.crud import crud_portfolio
+from app.crud import crud_portfolio, crud_holding # Added crud_holding
 
 router = APIRouter(
     prefix="/portfolios",
@@ -102,3 +103,25 @@ async def delete_portfolio(
 #     global _next_portfolio_id, _fake_portfolios_db
 #     _fake_portfolios_db.clear()
 #     _next_portfolio_id = 1
+
+@router.get("/{portfolio_id}/holdings", response_model=List[PydanticHolding])
+async def list_portfolio_holdings(
+    portfolio_id: int,
+    current_user: PydanticUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 100
+):
+    # First, verify ownership of the portfolio
+    db_portfolio = crud_portfolio.get_portfolio_by_id(db=db, portfolio_id=portfolio_id)
+    if db_portfolio is None or db_portfolio.user_id != current_user.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Portfolio not found or not owned by user"
+        )
+
+    # If ownership is confirmed, fetch holdings
+    db_holdings = crud_holding.get_holdings_by_portfolio(
+        db=db, portfolio_id=portfolio_id, skip=skip, limit=limit
+    )
+    return [PydanticHolding.model_validate(h) for h in db_holdings]

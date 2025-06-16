@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react"; // Added useCallback
 import { useRouter } from "next/navigation"; // For potential redirection within context
+import { getMe } from "../services/authService"; // Import getMe
 
 // Define User type (consistent with backend Pydantic User model)
 export interface User {
@@ -27,66 +28,57 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true); // Start true, set false after initial load
-  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter(); // Can be used for global redirects on logout/auth failure
+
+  const fetchUserDetails = useCallback(async (currentToken: string) => {
+    setIsLoading(true); // Indicate loading of user details
+    const result = await getMe(currentToken);
+    if (result.success) {
+      setUser(result.data);
+    } else {
+      // If getMe fails (e.g. token invalid), logout to clear state
+      console.error("Failed to fetch user details:", result.message);
+      localStorage.removeItem('authToken'); // Ensure token is cleared
+      setToken(null);
+      setUser(null);
+      // Optionally redirect to login if critical, or let components handle it
+      // router.push('/login');
+    }
+    setIsLoading(false);
+  }, []); // No dependencies like router if not used inside for now
 
   useEffect(() => {
     const storedToken = localStorage.getItem('authToken');
     if (storedToken) {
       setToken(storedToken);
-      // TODO (Future Enhancement):
-      // Here, you would typically verify the token and fetch user details
-      // For example:
-      // async function fetchUser() {
-      //   try {
-      //     // Assume you have an API endpoint like /users/me
-      //     // const response = await api.get('/users/me', { headers: { Authorization: `Bearer ${storedToken}` } });
-      //     // setUser(response.data);
-      //   } catch (error) {
-      //     console.error("Failed to fetch user on initial load", error);
-      //     localStorage.removeItem('authToken'); // Clear invalid token
-      //     setToken(null);
-      //   } finally {
-      //     setIsLoading(false);
-      //   }
-      // }
-      // fetchUser();
-      // For now, just set a placeholder user if token exists or leave user null
-      // If you decode the token and it has user info, you can use that:
-      // e.g. const decodedUser = jwt_decode(storedToken); setUser(decodedUser);
+      fetchUserDetails(storedToken);
+    } else {
+      setIsLoading(false); // No token, so not loading user details
     }
-    setIsLoading(false); // Set loading to false after attempting to load token
-  }, []);
+  }, [fetchUserDetails]); // Include fetchUserDetails in dependency array
 
-  const login = (newToken: string, userData?: User) => {
+  const login = useCallback(async (newToken: string, userData?: User) => {
     localStorage.setItem('authToken', newToken);
     setToken(newToken);
     if (userData) {
       setUser(userData);
+      // If user data is provided directly (e.g. from registration response),
+      // no need to fetch again immediately.
+      // However, typically login response is just a token.
+    } else {
+      // Fetch user details after setting the new token
+      await fetchUserDetails(newToken);
     }
-    // TODO (Future Enhancement):
-    // If userData is not passed, fetch user details from API using newToken
-    // Example:
-    // async function fetchAndSetUser() {
-    //   try {
-    //     // const response = await api.get('/users/me', { headers: { Authorization: `Bearer ${newToken}` } });
-    //     // setUser(response.data);
-    //   } catch (error) {
-    //     console.error("Failed to fetch user on login", error);
-    //   }
-    // }
-    // if (!userData) fetchAndSetUser();
+    // Redirection is currently handled by the page component after calling login.
+  }, [fetchUserDetails]);
 
-    // Redirection could also be handled here globally, or per-page as it is now.
-    // router.push('/dashboard');
-  };
-
-  const logout = () => {
+  const logout = useCallback(() => {
     localStorage.removeItem('authToken');
     setToken(null);
     setUser(null);
-    // router.push('/login'); // Optionally redirect to login on logout
-  };
+    router.push('/login'); // Redirect to login on logout for better UX
+  }, [router]);
 
   return (
     <AuthContext.Provider value={{ token, user, isLoading, login, logout }}>

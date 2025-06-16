@@ -38,7 +38,7 @@ class TradeBase(BaseModel):
     # For Pydantic v2, it's better to use Annotated[Decimal, Field(max_digits=, decimal_places=)]
     # or just `Decimal` and rely on db constraints / app logic for precision for schemas.
     # For simplicity with condecimal as used before:
-    price: condecimal(max_digits=12, decimal_places=2)
+    price: Optional[condecimal(max_digits=12, decimal_places=2)] = None
 
 
 class TradeCreate(TradeBase):
