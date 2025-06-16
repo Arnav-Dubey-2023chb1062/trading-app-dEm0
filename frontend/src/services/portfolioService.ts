@@ -11,6 +11,7 @@ export interface Portfolio {
   user_id: number;
   portfolio_name: string;
   created_at: string; // Assuming ISO string format from backend
+  cash_balance: string; // Add cash_balance, will be string from JSON
 }
 
 export interface PortfolioCreatePayload {

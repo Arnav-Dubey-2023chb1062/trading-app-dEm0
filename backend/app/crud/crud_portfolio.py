@@ -1,14 +1,21 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from decimal import Decimal # Import Decimal
 
 from app.models.portfolio_models import DBPortfolio, PortfolioCreate # Pydantic PortfolioCreate
-from app.models.user_models import DBUser # For type hinting if needed, not directly used here
+# from app.models.user_models import DBUser # Not strictly needed here
+
+DEFAULT_STARTING_CASH = Decimal("100000.00")
 
 def create_user_portfolio(db: Session, portfolio: PortfolioCreate, user_id: int) -> DBPortfolio:
     """
-    Creates a new portfolio for a specific user.
+    Creates a new portfolio for a specific user with a default starting cash balance.
     """
-    db_portfolio = DBPortfolio(**portfolio.model_dump(), user_id=user_id)
+    db_portfolio = DBPortfolio(
+        **portfolio.model_dump(),
+        user_id=user_id,
+        cash_balance=DEFAULT_STARTING_CASH
+    )
     db.add(db_portfolio)
     db.commit()
     db.refresh(db_portfolio)

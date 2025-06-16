@@ -1,27 +1,14 @@
-import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
+from .config import settings # Import the settings instance
 
-# Load environment variables from .env file (optional, but good practice)
-# Create a .env file in the backend directory with your DATABASE_URL
-# e.g., DATABASE_URL=postgresql://your_user:your_password@localhost/trading_app_db
-load_dotenv()
-
-# Define SQLALCHEMY_DATABASE_URL
-# It should be read from an environment variable for security and flexibility.
-# Default to the placeholder if the environment variable is not set.
-SQLALCHEMY_DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://your_db_user:your_db_password@localhost/trading_app_db"
-)
-# IMPORTANT: Users need to configure their actual database URL here,
-# preferably via a .env file or system environment variables.
+# SQLALCHEMY_DATABASE_URL is now sourced from settings.SQLALCHEMY_DATABASE_URL
+# The load_dotenv() call is now in config.py
 
 # Create the SQLAlchemy engine
 # For PostgreSQL, no special connect_args are typically needed like for SQLite.
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(settings.SQLALCHEMY_DATABASE_URL)
 
 # Create SessionLocal class
 # Each instance of SessionLocal will be a database session.

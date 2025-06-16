@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, FormEvent } from "react";
+import { useState, FormEvent, useEffect, useCallback } from "react"; // Import useEffect, useCallback
 import { useAuth } from "../context/AuthContext";
-import { executeTrade, TradePayload, TradeResponse } from "../services/tradeService"; // Import service
+import { executeTrade, TradePayload, TradeResponse } from "../services/tradeService";
+import { getTickerPrice, TickerPriceResponse } from "../services/marketService"; // Import market price service
 
 export type TradeType = 'BUY' | 'SELL';
 
@@ -15,10 +16,45 @@ export default function TradeForm({ portfolioId, onTradeSuccess }: TradeFormProp
   const [tickerSymbol, setTickerSymbol] = useState("");
   const [quantity, setQuantity] = useState(""); // Store as string for input field
   const [tradeType, setTradeType] = useState<TradeType>('BUY');
-  const [price, setPrice] = useState(""); // Optional client-set price, store as string
+  const [price, setPrice] = useState("");
+  const [marketPrice, setMarketPrice] = useState<string | null>(null);
+  const [marketPriceSource, setMarketPriceSource] = useState<string | null>(null);
+  const [isFetchingMarketPrice, setIsFetchingMarketPrice] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // For trade execution
   const { token } = useAuth();
+
+  const fetchPriceForTicker = useCallback(async (symbol: string) => {
+    if (!symbol) {
+      setMarketPrice(null);
+      setMarketPriceSource(null);
+      return;
+    }
+    setIsFetchingMarketPrice(true);
+    // Token is not strictly needed for getTickerPrice if endpoint is public,
+    // but pass it along if your service function expects it or for future consistency.
+    const result = await getTickerPrice(symbol);
+    if (result.success) {
+      setMarketPrice(result.data.price);
+      setMarketPriceSource(result.data.source);
+    } else {
+      setMarketPrice("N/A");
+      setMarketPriceSource(result.message || "Error fetching price");
+    }
+    setIsFetchingMarketPrice(false);
+  }, []); // Removed token from deps if getTickerPrice doesn't need it. Add if it does.
+
+  useEffect(() => {
+    if (tickerSymbol.trim().length >= 1) {
+      const timer = setTimeout(() => {
+        fetchPriceForTicker(tickerSymbol.trim().toUpperCase());
+      }, 750); // Debounce by 750ms
+      return () => clearTimeout(timer);
+    } else {
+      setMarketPrice(null);
+      setMarketPriceSource(null);
+    }
+  }, [tickerSymbol, fetchPriceForTicker]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -100,6 +136,17 @@ export default function TradeForm({ portfolioId, onTradeSuccess }: TradeFormProp
             className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white disabled:opacity-50"
             placeholder="e.g., AAPL"
           />
+          {isFetchingMarketPrice && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Fetching price...</p>}
+          {marketPrice && marketPrice !== "N/A" && (
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Market Price: ${marketPrice} (Source: {marketPriceSource})
+            </p>
+          )}
+          {marketPrice === "N/A" && (
+             <p className="mt-1 text-xs text-red-500 dark:text-red-400">
+              Market Price: N/A (Source: {marketPriceSource})
+            </p>
+          )}
         </div>
 
         <div>

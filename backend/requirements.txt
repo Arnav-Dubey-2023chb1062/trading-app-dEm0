@@ -95,3 +95,4 @@ passlib[bcrypt]
 python-jose[cryptography]
 python-multipart
 python-dotenv
+requests

@@ -1,6 +1,6 @@
 from pydantic import BaseModel, ConfigDict, condecimal
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone # Import timezone
 
 from sqlalchemy import Column, String, DECIMAL, TIMESTAMP, func
 # No relationships needed for this model as per current design
@@ -12,7 +12,11 @@ class DBMarketDataCache(Base): # Prefixed with DB for consistency
 
     ticker_symbol = Column(String(20), primary_key=True, index=True)
     last_price = Column(DECIMAL(12, 2), nullable=False)
-    last_updated = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
+    last_updated = Column(
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
 
 # --- Pydantic Schemas ---
 class MarketDataBase(BaseModel):

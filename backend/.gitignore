@@ -1,0 +1,36 @@
+# Environment variables
+.env
+
+# Python bytecode and cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# IDE and editor specific files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Test reports
+htmlcov/
+.pytest_cache/
+.coverage
+coverage.xml
+
+# alembic.ini might contain sensitive info if not careful, though usually not.
+# For now, assume alembic.ini is okay to commit.
+# If it were to store DB URLs directly (not recommended), it should be gitignored.
+
+# SQLite database files (if used, not for this project currently)
+# *.db
+# *.sqlite3
