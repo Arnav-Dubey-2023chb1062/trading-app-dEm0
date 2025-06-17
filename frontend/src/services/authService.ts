@@ -36,7 +36,14 @@ export interface RegisteredUser {
   user_id: number;
   username: string;
   email: string;
-  // Add any other fields your backend returns for a User model, e.g., created_at
+  created_at?: string | Date; // Ensure this matches what backend Pydantic User sends
+}
+
+// This User type will be used for the /me endpoint response
+export interface User extends RegisteredUser {
+  // Currently RegisteredUser has all necessary fields (user_id, username, email).
+  // If /me returns more fields than /register, add them here or ensure RegisteredUser is comprehensive.
+  // For now, assuming /me returns the same Pydantic User schema as /register's response.
 }
 
 // Structure for handling errors
@@ -85,6 +92,38 @@ export const registerUser = async (
     } else {
       message = axiosError.message || message;
     }
+    return { success: false, message, details: axiosError.response?.data };
+  }
+};
+
+/**
+ * Fetches the current user's details.
+ * @param token - The authentication token.
+ * @returns A promise that resolves to an ApiSuccessResponse with User data or an ApiErrorResponse.
+ */
+export const getMe = async (
+  token: string
+): Promise<ApiSuccessResponse<User> | ApiErrorResponse> => {
+  try {
+    const response = await axios.get<User>(`${USERS_API_URL}/me`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    return { success: true, data: response.data };
+  } catch (error) {
+    const axiosError = error as AxiosError<ApiErrorDetail>;
+    let message = 'Failed to fetch user details.';
+     if (axiosError.response && axiosError.response.data && axiosError.response.data.detail) {
+      if (typeof axiosError.response.data.detail === 'string') {
+        message = axiosError.response.data.detail;
+      }
+    } else if (axiosError.request) {
+      message = 'No response from server. Please check your network connection.';
+    } else {
+      message = axiosError.message || message;
+    }
+    // If token is invalid (e.g. 401), the caller (AuthContext) should handle logout.
     return { success: false, message, details: axiosError.response?.data };
   }
 };
